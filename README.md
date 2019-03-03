@@ -129,7 +129,10 @@ My system uses [systemctl](http://man7.org/linux/man-pages/man1/systemctl.1.html
     WantedBy=multi-user.target
     EOF
 
+    # systemctl enable apcupsd@computers.service
     # systemctl start apcupsd@computers.service
+
+    # systemctl enable apcupsd@monitors.service
     # systemctl start apcupsd@monitors.service
 
 # Configuration
