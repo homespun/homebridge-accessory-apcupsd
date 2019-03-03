@@ -203,33 +203,37 @@ module.exports = function (homebridge) {
 
   , getName:
     function (callback) {
-      debug('getName', { location: this.location.host })
-      this.fetchStatus(function (err, status) {
-        callback(err, ((this.name !== 'apcupsd') && status && status.UPSNAME) || this.name)
+      const self = this
+
+      self.fetchStatus(function (err, status) {
+        callback(err, (status && status.UPSNAME) || self.name)
       })
     }
 
   , getModel:
     function (callback) {
-      debug('getModel', { location: this.location.host })
-      this.fetchStatus(function (err, status) {
-        callback(err, status && status.MODEL)
+      const self = this
+
+      self.fetchStatus(function (err, status) {
+        callback(err, (status && status.MODEL) || self.config.model)
       })
     }
 
   , getSerialNumber:
     function (callback) {
-      debug('getSerialNumber', { location: this.location.host })
-      this.fetchStatus(function (err, status) {
-        callback(err, status && status.SERIALNO)
+      const self = this
+
+      self.fetchStatus(function (err, status) {
+        callback(err, (status && status.SERIALNO) || self.config.serialNo)
       })
     }
 
   , getFirmwareRevision:
     function (callback) {
-      debug('getFirmwareRevision', { location: this.location.host })
-      this.fetchStatus(function (err, status) {
-        callback(err, status && status.FIRMWARE)
+      const self = this
+
+      self.fetchStatus(function (err, status) {
+        callback(err, ((status && status.FIRMWARE) || self.config.firmware))
       })
     }
 

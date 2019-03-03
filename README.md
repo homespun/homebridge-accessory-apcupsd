@@ -32,9 +32,10 @@ Then all subsequent installations must be like this:
     sudo npm install -g --unsafe-perm homebridge-accessory-apcupsd
 
 # Install, Configure, and Test apcupsd
-This plugin won't work until you hjave [apcupsd](http://ww.apcupsd.org/) running in your network.
-By default,
-a single UPS is monitored via the USB cable.
+This plugin won't work until you have [apcupsd](http://ww.apcupsd.org/) running in your network.
+I found this
+[tutorial](http://www.anites.com/2013/09/monitoring-ups.html#How%20to%20monitor%20a%20UPS%20with%20a%20Raspberry%20Pi)
+enlightening.
 
 If you are running [homebridge](https://github.com/nfarina/homebridge) on a different platform than `apcupsd`,
 then you must edit `/etc/apcupsd/apcupsd.conf` and change
@@ -54,7 +55,10 @@ Also make sure you have
     NETSERVER on
 
 ## Monitoring Multiple UPS Devices
-You can monitor multiple UPS devices on the same platform,
+By default,
+a single UPS is monitored via the USB cable;
+however,
+you can monitor multiple UPS devices on the same platform,
 but the configuration depends on the platform.
 For example,
 using the Debian [instructions](https://wiki.debian.org/apcupsd#Configuring_.28Multiple_UPS_Devices.29) on my system:
@@ -156,11 +160,10 @@ The default port number is `3551`,
 and can be changed by adding it to the `location` value, e.g., `"192.168.1.109:3552"`.
 
 ## Name, Model, Serial Number, and Firmware Revision
-This is a **known bug:**
-although the plugin successfully retrieves these values from `apcusbd` --
-because of this [issue](https://github.com/nfarina/homebridge/issues/697) --
+Although the plugin successfully retrieves these values from `apcusbd`,
 the plugin can not provide the modified values.
-Until a fix is in place,
+A [PR](https://github.com/nfarina/homebridge/pull/2169) has been submitted with a possible fix.
+Until then,
 I suggest you run
 
     % apcaccess
