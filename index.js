@@ -344,7 +344,6 @@ module.exports = function (homebridge) {
           , myContactService = new Service.ContactSensor()
           , myBatteryService = new Service.BatteryService()
 
-      this.accessoryInformation = myAccessoryInformation
       myAccessoryInformation
         .setCharacteristic(Characteristic.Name, this.name)
         .setCharacteristic(Characteristic.Manufacturer, "American Power Conversion (APC)")
