@@ -37,7 +37,7 @@ module.exports = function (homebridge) {
   }
 
   APC.PowerService = function (displayName, subtype) {
-    Service.call(this, displayName, '25f5bc73-59ec-41ce-887b-c7fc0ba60f48', subtype)
+    Service.call(this, displayName, '00000001-0000-1000-8000-135D67EC4377', subtype)
     this.addCharacteristic(CommunityTypes.InputVoltageAC)
     this.addCharacteristic(CommunityTypes.BatteryVoltageDC)
     this.addCharacteristic(CommunityTypes.UPSLoadPercent)
@@ -149,11 +149,18 @@ module.exports = function (homebridge) {
             }
           }
 
+/*
+          if ((status.NOMPOWER !== undefined) && (status.LOADPCT !== undefined)) {
+            const power = (status.NOMPOWER * status.LOADPCT) / 100.0
+
+            self.energyHistory.addEntry({ time: moment().unix(), power })
+          }
+ */
           if (status.STATFLAG !== undefined) {
             const contact = Characteristic.ContactSensorState[(status.STATFLAG & 0x08) ? 'CONTACT_DETECTED'
                                                                                        : 'CONTACT_NOT_DETECTED']
 
-            self.historyService.addEntry({ time: moment().unix(), status: contact })
+            self.doorHistory.addEntry({ time: moment().unix(), status: contact })
           }
 
           self.cache.set('status', status)
@@ -402,18 +409,37 @@ module.exports = function (homebridge) {
         .getCharacteristic(Characteristic.StatusLowBattery)
         .on('get', this.getStatusLowBattery.bind(this))
 
-      this.displayName = this.name
-      this.historyService = new FakeGatoHistoryService('door', this, {
-        storage: 'fs',
-        disableTimer: true,
-        path: homebridge.user.cachedAccessoryPath(),
-        filename: this.location.host + '-apcupsd_persist.json'
+/*
+      this.displayName = this.name + ' Energy'
+      this.energyHistory = new FakeGatoHistoryService('energy', this, {
+        storage      : 'fs',
+        disableTimer : true,
+        length       : Math.pow(2, 14),
+        path         : homebridge.user.cachedAccessoryPath(),
+        filename     : this.location.host + '-apcupsd-energy_persist.json'
+      })
+      this.energyHistory.subtype = 'energy'
+ */
+
+      this.displayName = this.name + ' Door'
+      this.doorHistory = new FakeGatoHistoryService('door', this, {
+        storage      : 'fs',
+        disableTimer : true,
+        length       : Math.pow(2, 14),
+        path         : homebridge.user.cachedAccessoryPath(),
+        filename     : this.location.host + '-apcupsd-door_persist.json'
       })
 
       setTimeout(this.fetchStatus.bind(this), 1 * 1000)
       setInterval(this.fetchStatus.bind(this), this.options.ttl * 1000)
 
-      return [ myAccessoryInformation, myPowerService, myContactService, myBatteryService, this.historyService ]
+      return [ myAccessoryInformation
+             , myPowerService
+             , myContactService
+             , myBatteryService
+//           , this.energyHistory
+             , this.doorHistory
+             ]
     }
   }
 }
