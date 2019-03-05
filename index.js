@@ -99,13 +99,17 @@ module.exports = function (homebridge) {
           }
 
           const s = (value) => {
-            return value
+            return value.split('/').join(' ')
           }
 
+          const t = (value) => {
+            return s(value.split('.')[0])
+          }
+          
           const z =
           { BATTV    : r
           , BCHARGE  : p
-          , FIRMWARE : s
+          , FIRMWARE : t
           , ITEMP    : r
           , LINEV    : r
           , LOADPCT  : p
@@ -118,6 +122,7 @@ module.exports = function (homebridge) {
           }
 
           self.statusFault = (err || (!result)) ? Characteristic.StatusFault.GENERAL_FAULT : Characteristic.StatusFault.NO_FAULT
+          err = null
 
           const status = {}
           for (let key in z) {
@@ -294,20 +299,20 @@ module.exports = function (homebridge) {
   , getContactSensorState:
     function (callback) {
       this.fetchStatus(function (err, status) {
-        const flags = status && status.STATFLAG
+        let flags = status && status.STATFLAG
 
-        if ((err) || (flags === undefined)) return callback(err)
-
+        if ((err) || (flags === undefined)) flags = 0x00
         callback(err, Characteristic.ContactSensorState[(flags & 0x08) ? 'CONTACT_DETECTED' : 'CONTACT_NOT_DETECTED'])
       })
     }
 
   , getStatusActive:
     function (callback) {
-      this.getUPSLoadPercent((err, percentage) => {
-        if ((err) || (percentage === undefined)) return callback(err)
+      this.fetchStatus(function (err, status) {
+        let percentage = status && status.LOADPCT
 
-        callback(null, Characteristic.Active[percentage ? 'ACTIVE' : 'INACTIVE'])
+        if ((err) || (percentage === undefined)) percentage = 0
+        callback(err, Characteristic.Active[percentage ? 'ACTIVE' : 'INACTIVE'])
       })
     }
 
@@ -319,32 +324,33 @@ module.exports = function (homebridge) {
   , getBatteryLevel:
     function (callback) {
       this.fetchStatus(function (err, status) {
-        callback(err, status && status.BCHARGE)
+        let percentage = status && status.BCHARGE
+
+        if ((err) || (percentage === undefined)) percentage = 100
+        callback(err, percentage)
       })
     }
 
   , getChargingState:
     function (callback) {
       this.fetchStatus(function (err, status) {
-        const flags = status && status.STATFLAG
         const percentage = status && status.BCHARGE
+        let flags = status && status.STATFLAG
 
-        if ((err) || (typeof flags === undefined) || (typeof percentage === undefined)) return callback(err)
-
-        callback(null, Characteristic.ChargingState[(flags & 0x80)                          ? 'NOT_CHARGEABLE'
-                                                 : ((flags & 0x10) || (percentage === 100)) ? 'NOT_CHARGING'
-                                                 :                                            'CHARGING'])
+        if ((err) || (flags === undefined) || (percentage === undefined)) flags = 0x80
+        callback(err, Characteristic.ChargingState[(flags & 0x80)                          ? 'NOT_CHARGEABLE'
+                                                : ((flags & 0x10) || (percentage === 100)) ? 'NOT_CHARGING'
+                                                :                                            'CHARGING'])
       })
     }
 
   , getStatusLowBattery:
     function (callback) {
       this.fetchStatus(function (err, status) {
-        const flags = status && status.STATFLAG
+        let flags = status && status.STATFLAG
 
-        if (err) return callback(err)
-
-        callback(null, Characteristic.StatusLowBattery[(flags & 0x40) ? 'BATTERY_LEVEL_LOW' : 'BATTERY_LEVEL_NORMAL'])
+        if ((err) || (flags === undefined)) flags = 0x00
+        callback(err, Characteristic.StatusLowBattery[(flags & 0x40) ? 'BATTERY_LEVEL_LOW' : 'BATTERY_LEVEL_NORMAL'])
       })
     }
 
