@@ -32,6 +32,20 @@ module.exports = function (homebridge) {
       this.location.host += ':' + this.location.port
     }
     this.cache = new NodeCache({ stdTTL: 1 })
+    
+
+    const now = moment().unix()
+
+    this.doorExtra =
+    { timesOpened: 0
+    , openDuration: 0
+    , closedDuration: 0
+    , lastActivation: 0
+    , lastReset: now - moment('2001-01-01T00:00:00Z').unix()
+    , lastChange: now
+    , lastStatus: -1
+    }
+
     this.statusFault = Characteristic.StatusFault.NO_FAULT
     this.callbacks = []
   }
@@ -164,8 +178,25 @@ module.exports = function (homebridge) {
           if (status.STATFLAG !== undefined) {
             const contact = Characteristic.ContactSensorState[(status.STATFLAG & 0x08) ? 'CONTACT_DETECTED'
                                                                                        : 'CONTACT_NOT_DETECTED']
+            const now = moment().unix()
 
-            self.doorHistory.addEntry({ time: moment().unix(), status: contact })
+            self.doorHistory.addEntry({ time: now, status: contact })
+
+            if (self.doorExtra.lastStatus !== contact) {
+              const delta = now - self.doorExtra.lastChange
+
+              self.doorExtra.lastStatus = contact
+              if (contact == Characteristic.ContactSensorState.CONTACT_NOT_DETECTED) {
+                self.doorExtra.timesOpened++
+                self.doorExtra.closedDuration += delta
+                self.doorExtra.lastActivation = now - self.doorHistory.getInitialTime()
+              } else {
+                self.doorExtra.openDuration += delta
+              }
+              self.doorExtra.lastChange = now
+              self.doorHistory.setExtraPersistedData(self.doorExtra)
+              debug('fetchStatus', { location: self.location.host, doorExtra: self.doorExtra })
+            }
           }
 
           self.cache.set('status', status)
@@ -211,6 +242,19 @@ module.exports = function (homebridge) {
       }
 
       self.callbacks.push(callback)
+    }
+
+  , loadExtra:
+    function () {
+      debug('loadExtra', { location: this.location.host, loaded: this.doorHistory.isHistoryLoaded() })
+      let extra
+
+      if (!this.doorHistory.isHistoryLoaded()) return setTimeout(this.loadExtra.bind(this), 100)
+
+      extra = this.doorHistory.getExtraPersistedData()
+      if (extra) this.doorExtra = extra
+      else this.doorHistory.setExtraPersistedData(this.doorExtra)
+      debug('loadExtra', { location: this.location.host, doorExtra: this.doorExtra })
     }
 
   , getName:
@@ -321,6 +365,41 @@ module.exports = function (homebridge) {
       callback(null, this.statusFault)
     }
 
+  , getEveTimesOpened:
+    function (callback) {
+      callback(null, this.doorExtra.timesOpened)
+    }
+
+  , getEveOpenDuration:
+    function (callback) {
+      callback(null, this.doorExtra.openDuration)
+    }
+
+  , getEveClosedDuration:
+    function (callback) {
+      callback(null, this.doorExtra.closedDuration)
+    }
+
+  , getEveLastActivation:
+    function (callback) {
+      callback(null, this.doorExtra.lastActivation)
+    }
+
+  , getEveResetTotal:
+    function (callback) {
+      this.doorHistory.getCharacteristic(CommunityTypes.EveResetTotal).updateValue(this.doorExtra.lastReset)
+      callback(null, this.doorExtra.lastReset)
+    }
+
+  , setEveResetTotal:
+    function (value, callback) {
+      this.doorExtra.timesOpened = 0
+      this.doorExtra.lastReset = value
+      this.doorHistory.setExtraPersistedData(this.doorExtra)
+      this.doorHistory.getCharacteristic(CommunityTypes.EveResetTotal).updateValue(this.doorExtra.lastReset)
+      callback(null)
+    }
+
   , getBatteryLevel:
     function (callback) {
       this.fetchStatus(function (err, status) {
@@ -404,6 +483,27 @@ module.exports = function (homebridge) {
       myContactService
         .getCharacteristic(Characteristic.StatusFault)
         .on('get', this.getStatusFault.bind(this))
+      myContactService.addOptionalCharacteristic(CommunityTypes.EveTimesOpened)
+      myContactService
+        .getCharacteristic(CommunityTypes.EveTimesOpened)
+        .on('get', this.getEveTimesOpened.bind(this))
+      myContactService.addOptionalCharacteristic(CommunityTypes.EveOpenDuration)
+      myContactService
+        .getCharacteristic(CommunityTypes.EveOpenDuration)
+        .on('get', this.getEveOpenDuration.bind(this))
+      myContactService.addOptionalCharacteristic(CommunityTypes.EveClosedDuration)
+      myContactService
+        .getCharacteristic(CommunityTypes
+        .EveClosedDuration).on('get', this.getEveClosedDuration.bind(this))
+      myContactService.addOptionalCharacteristic(CommunityTypes.EveLastActivation)
+      myContactService
+        .getCharacteristic(CommunityTypes.EveLastActivation)
+        .on('get', this.getEveLastActivation.bind(this))
+      myContactService.addOptionalCharacteristic(CommunityTypes.EveResetTotal)
+      myContactService
+        .getCharacteristic(CommunityTypes.EveResetTotal)
+        .on('get', this.getEveResetTotal.bind(this))
+        .on('set', this.setEveResetTotal.bind(this))
 
       myBatteryService
         .getCharacteristic(Characteristic.BatteryLevel)
@@ -435,6 +535,7 @@ module.exports = function (homebridge) {
         path         : homebridge.user.cachedAccessoryPath(),
         filename     : this.location.host + '-apcupsd-door_persist.json'
       })
+      this.loadExtra()
 
       setTimeout(this.fetchStatus.bind(this), 1 * 1000)
       setInterval(this.fetchStatus.bind(this), this.options.ttl * 1000)
