@@ -147,7 +147,7 @@ Edit `~/.homebridge/config.json`, inside `"accessories": [ ... ]` add:
     , "location"  : "a.b.c.d"
 
     // optional, here are the defaults
-    , "options"   : { "ttl": 600, "verboseP" : false }
+    , "options"   : { "history": "door", "ttl": 600, "verboseP" : false }
 
     , "model"     : "..."
     , "serialNo"  : "..."
@@ -158,6 +158,12 @@ Edit `~/.homebridge/config.json`, inside `"accessories": [ ... ]` add:
 The IP address (`"a.b.c.d"`) is where `apcupsd` is running.
 The default port number is `3551`,
 and can be changed by adding it to the `location` value, e.g., `"192.168.1.109:3552"`.
+
+## History
+By default,
+the plugin will log history entries for the [Elgato Eve app](https://www.evehome.com/en/eve-app).
+In addition to `"door"`,
+you can also use `"energy"`.
 
 ## Name, Model, Serial Number, and Firmware Revision
 Although the plugin successfully retrieves these values from `apcusbd`,
