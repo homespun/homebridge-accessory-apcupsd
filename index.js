@@ -15,6 +15,8 @@ module.exports = function (homebridge) {
 
   homebridge.registerAccessory("homebridge-accessory-apcupsd", "apcupsd", APC)
 
+  const cache = new NodeCache({ stdTTL: 1 })
+
   function APC(log, config) {
     if (!(this instanceof APC)) return new APC(log, config)
 
@@ -22,9 +24,12 @@ module.exports = function (homebridge) {
     this.config = config || { accessory: 'apcupsd' }
 
     this.name = this.config.name
-    this.options = underscore.defaults(this.config.options || {}, { ttl: 600, verboseP: false, history: [ 'door' ] })
+
+    if (!this.config.subtype) this.config.subtype = 'battery'
+    if ([ 'battery', 'power' ].indexOf(this.config.subtype) === -1) throw new Error('invalid subtype: ' + this.config.subtype)
+
+    this.options = underscore.defaults(this.config.options || {}, { ttl: 600, verboseP: false })
     if (this.options.ttl < 10) this.options.ttl = 600
-    if (!Array.isArray(this.options.history)) this.options.history = [ this.options.history ]
     debug('options', this.options)
 
     this.location = require('url').parse('http://' + this.config.location + '/')
@@ -32,35 +37,28 @@ module.exports = function (homebridge) {
       this.location.port = 3551
       this.location.host += ':' + this.location.port
     }
-    this.cache = new NodeCache({ stdTTL: 1 })
+
+    this.whoami = { location: this.location.host, subtype: this.config.subtype }
 
 
     const now = moment().unix()
 
-    this.doorExtra =
-    { timesOpened: 0
-    , openDuration: 0
-    , closedDuration: 0
-    , lastActivation: 0
-    , lastReset: now - moment('2001-01-01T00:00:00Z').unix()
-    , lastChange: now
-    , lastStatus: -1
+    this.historyExtra = { lastReset: now - moment('2001-01-01T00:00:00Z').unix(), lastChange: now }
+    if (this.config.subtype === 'power') {
+      underscore.extend(this.historyExtra, { wattSeconds: 0, totalSamples: 1, lastSample: now })
+    } else {
+      underscore.extend(this.historyExtra, 
+                        { timesOpened    :  0
+                        , openDuration   :  0
+                        , closedDuration :  0
+                        , lastActivation :  0
+                        , lastStatus     : -1
+                        })
     }
 
     this.statusFault = Characteristic.StatusFault.NO_FAULT
     this.callbacks = []
   }
-
-  APC.PowerService = function (displayName, subtype) {
-    Service.call(this, displayName, '00000001-0000-1000-8000-135D67EC4377', subtype)
-    this.addCharacteristic(CommunityTypes.InputVoltageAC)
-    this.addCharacteristic(CommunityTypes.BatteryVoltageDC)
-    this.addCharacteristic(CommunityTypes.UPSLoadPercent)
-    this.addOptionalCharacteristic(CommunityTypes.Watts)
-    this.addOptionalCharacteristic(CommunityTypes.OutputVoltageAC)
-    this.addOptionalCharacteristic(Characteristic.CurrentTemperature)
-  }
-  inherits(APC.PowerService, Service)
 
 /* getStatusJson().then(status)
 
@@ -91,7 +89,7 @@ module.exports = function (homebridge) {
       const self = this
 
       if (!callback) callback = () => {}
-      self.cache.get('status', (err, status) => {
+      cache.get(self.location.host + '_status', (err, status) => {
         if (err || status) return callback(err, status)
 
         self._fetchStatus((err, result) => {
@@ -149,57 +147,80 @@ module.exports = function (homebridge) {
             if (value !== undefined) status[key] = value
           }
 
-          debug('status', { location: self.location.host, status })
+//        debug('fetchStatus', underscore.extend({}, self.whoami, { status }))
 
           if (!self.initP) {
-            debug('fetchStatus', { location: self.location.host, status: 'initialized' })
+//          debug('fetchStatus', underscore.extend({}, self.whoami, { status: 'initialized' }))
             self.initP = true
 
-            if (status.NOMPOWER) {
-              self.myPowerService
-                .getCharacteristic(CommunityTypes.Watts).on('get', self.getWatts.bind(self))
-            }
-            if (status.OUTPUTV) {
-              self.myPowerService
-                .getCharacteristic(CommunityTypes.OutputVoltageAC).on('get', self.getOutputVoltageAC.bind(self))
-            }
-            if (status.ITEMP) {
-              self.myPowerService
-                .getCharacteristic(Characteristic.CurrentTemperature).on('get', self.getCurrentTemperature.bind(self))
+            if (self.config.subtype === 'power') {
+              if (status.NOMPOWER) {
+                self.myPowerService
+                  .getCharacteristic(CommunityTypes.Watts).on('get', self.getWatts.bind(self))
+                self.myPowerService
+                  .getCharacteristic(CommunityTypes.KilowattHours).on('get', self.getKilowattHours.bind(self))
+              }
+              if (status.OUTPUTV) {
+                self.myPowerService
+                  .getCharacteristic(CommunityTypes.Volts).on('get', self.getOutputVoltageAC.bind(self))
+                self.myPowerService
+                  .getCharacteristic(CommunityTypes.VoltAmperes)
+                  .on('get', this.getVoltAmperes.bind(this))
+              }
+              if (status.ITEMP) {
+                self.myPowerService
+                  .getCharacteristic(Characteristic.CurrentTemperature).on('get', self.getCurrentTemperature.bind(self))
+              }
             }
           }
 
-          if ((self.energyHistory) && (status.NOMPOWER !== undefined) && (status.LOADPCT !== undefined)) {
-            const power = (status.NOMPOWER * status.LOADPCT) / 100.0
+          const now = moment().unix()
+          const delta = now - self.historyExtra.lastChange
 
-            self.energyHistory.addEntry({ time: moment().unix(), power })
+          if ((self.config.subtype === 'power') && (status.NOMPOWER !== undefined) && (status.LOADPCT !== undefined)) {
+            const gap = now - self.historyExtra.lastSample
+            const power = Math.round((status.NOMPOWER * status.LOADPCT) / 100.0)
+
+            if (delta >= this.options.ttl) {
+              self.history.addEntry({ time: now, power })
+              self.historyExtra.lastChange = now
+            }
+
+            if (gap > 0) {
+              self.historyExtra.wattSeconds += power * gap
+              self.historyExtra.totalSamples += gap
+              self.historyExtra.lastSample = now
+/*
+              self.historyExtra.average = ((power * gap) / self.historyExtra.totalSamples)
+              self.historyExtra.power = power
+              self.historyExtra.gap = gap
+ */
+//            debug('fetchStatus', underscore.extend({}, self.whoami, { historyExtra: self.historyExtra }))
+            }
           }
 
-          if ((self.doorHistory) && (status.STATFLAG !== undefined)) {
+          if ((self.config.subtype === 'battery') && (status.STATFLAG !== undefined)) {
             const contact = Characteristic.ContactSensorState[(status.STATFLAG & 0x08) ? 'CONTACT_DETECTED'
                                                                                        : 'CONTACT_NOT_DETECTED']
-            const now = moment().unix()
 
-            self.doorHistory.addEntry({ time: now, status: contact })
+            self.history.addEntry({ time: now, status: contact })
 
-            if (self.doorExtra.lastStatus !== contact) {
-              const delta = now - self.doorExtra.lastChange
-
-              self.doorExtra.lastStatus = contact
+            if (self.historyExtra.lastStatus !== contact) {
+              self.historyExtra.lastStatus = contact
               if (contact == Characteristic.ContactSensorState.CONTACT_NOT_DETECTED) {
-                self.doorExtra.timesOpened++
-                self.doorExtra.closedDuration += delta
-                self.doorExtra.lastActivation = now - self.doorHistory.getInitialTime()
+                self.historyExtra.timesOpened++
+                self.historyExtra.closedDuration += delta
+                self.historyExtra.lastActivation = now - self.history.getInitialTime()
               } else {
-                self.doorExtra.openDuration += delta
+                self.historyExtra.openDuration += delta
               }
-              self.doorExtra.lastChange = now
-              self.doorHistory.setExtraPersistedData(self.doorExtra)
-              debug('fetchStatus', { location: self.location.host, doorExtra: self.doorExtra })
+              self.historyExtra.lastChange = now
+              self.history.setExtraPersistedData(self.historyExtra)
+//            debug('fetchStatus', underscore.extend({}, self.whoami, { historyExtra: self.historyExtra }))
             }
           }
 
-          self.cache.set('status', status)
+          cache.set(self.location.host + '_status', status)
           callback(err, status)
         })
       })
@@ -226,7 +247,7 @@ module.exports = function (homebridge) {
       if (!self.client) {
         self.client = new APCaccess()
         self.client.connect(self.location.hostname, self.location.port).then(() => {
-        debug('fetchStatus', { location: self.location.host, status: 'connected' })
+//        debug('fetchStatus', underscore.extend({}, self.whoami, { status: 'connected' }))
           return self.client.getStatusJson()
         }).then((result) => {
           const client = self.client
@@ -234,7 +255,7 @@ module.exports = function (homebridge) {
           flush(null, result)
           return client.disconnect()
         }).then(() => {
-          debug('fetchStatus', { location: self.location.host, status: 'disconnected' })
+//        debug('fetchStatus', underscore.extend({}, self.whoami, { status: 'disconnected' }))
         }).catch((err) => {
           self.log.error('getStatusJSON error: ' + err.toString())
           flush(err)
@@ -246,15 +267,14 @@ module.exports = function (homebridge) {
 
   , loadExtra:
     function () {
-      debug('loadExtra', { location: this.location.host, loaded: this.doorHistory.isHistoryLoaded() })
       let extra
 
-      if (!this.doorHistory.isHistoryLoaded()) return setTimeout(this.loadExtra.bind(this), 100)
+      if (!this.history.isHistoryLoaded()) return setTimeout(this.loadExtra.bind(this), 100)
 
-      extra = this.doorHistory.getExtraPersistedData()
-      if (extra) this.doorExtra = extra
-      else this.doorHistory.setExtraPersistedData(this.doorExtra)
-      debug('loadExtra', { location: this.location.host, doorExtra: this.doorExtra })
+      extra = this.history.getExtraPersistedData()
+      if (extra) this.historyExtra = extra
+      else this.history.setExtraPersistedData(this.historyExtra)
+//    debug('fetchStatus', underscore.extend({}, this.whoami, { historyExtra: this.historyExtra }))
     }
 
   , getName:
@@ -314,6 +334,28 @@ module.exports = function (homebridge) {
       })
     }
 
+  , getVolts:
+    function (callback) {
+      this.fetchStatus(function (err, status) {
+        callback(err, status && (status.OUTPUTV || status.LINEV))
+      })
+    }
+
+  , getVoltAmperes:
+    function (callback) {
+      this.fetchStatus(function (err, status) {
+        const power = status && status.NOMPOWER
+        const percentage = status && status.LOADPCT
+        const volts = status && status.OUTPUTV
+
+        if ((err) || (power === undefined) || (percentage === undefined) || (volts === undefined) || (volts === 0)) {
+          return callback(err)
+        }
+
+        callback(err, (power * percentage) / (100.0 * volts))
+      })
+    }
+
   , getWatts:
     function (callback) {
       this.fetchStatus(function (err, status) {
@@ -324,6 +366,11 @@ module.exports = function (homebridge) {
 
         callback(err, (power * percentage) / 100.0)
       })
+    }
+
+  , getKilowattHours:
+    function (callback) {
+      callback(null, (this.historyExtra.wattSeconds * 3600) / (this.historyExtra.totalSamples * 1000))
     }
 
   , getOutputVoltageAC:
@@ -367,36 +414,36 @@ module.exports = function (homebridge) {
 
   , getEveTimesOpened:
     function (callback) {
-      callback(null, this.doorExtra.timesOpened)
+      callback(null, this.historyExtra.timesOpened)
     }
 
   , getEveOpenDuration:
     function (callback) {
-      callback(null, this.doorExtra.openDuration)
+      callback(null, this.historyExtra.openDuration)
     }
 
   , getEveClosedDuration:
     function (callback) {
-      callback(null, this.doorExtra.closedDuration)
+      callback(null, this.historyExtra.closedDuration)
     }
 
   , getEveLastActivation:
     function (callback) {
-      callback(null, this.doorExtra.lastActivation)
+      callback(null, this.historyExtra.lastActivation)
     }
 
   , getEveResetTotal:
     function (callback) {
-      this.doorHistory.getCharacteristic(CommunityTypes.EveResetTotal).updateValue(this.doorExtra.lastReset)
-      callback(null, this.doorExtra.lastReset)
+      this.history.getCharacteristic(CommunityTypes.EveResetTotal).updateValue(this.historyExtra.lastReset)
+      callback(null, this.historyExtra.lastReset)
     }
 
   , setEveResetTotal:
     function (value, callback) {
-      this.doorExtra.timesOpened = 0
-      this.doorExtra.lastReset = value
-      this.doorHistory.setExtraPersistedData(this.doorExtra)
-      this.doorHistory.getCharacteristic(CommunityTypes.EveResetTotal).updateValue(this.doorExtra.lastReset)
+      if (this.config.subtype === 'battery') this.historyExtra.timesOpened = 0
+      this.historyExtra.lastReset = value
+      this.history.setExtraPersistedData(this.historyExtra)
+      this.history.getCharacteristic(CommunityTypes.EveResetTotal).updateValue(this.historyExtra.lastReset)
       callback(null)
     }
 
@@ -436,15 +483,8 @@ module.exports = function (homebridge) {
   , getServices: function () {
       const FakeGatoHistoryService = require('fakegato-history')(homebridge)
           , myAccessoryInformation = new Service.AccessoryInformation()
-          , myPowerService = new APC.PowerService(this.name)
-          , myContactService = new Service.ContactSensor()
-          , myBatteryService = new Service.BatteryService()
-      const services =
-      [ myAccessoryInformation
-      , myPowerService
-      , myContactService
-      , myBatteryService
-      ]
+      const services = [ myAccessoryInformation ]
+      let interval, myPowerService, myContactService, myBatteryService
 
       myAccessoryInformation
         .setCharacteristic(Characteristic.Name, this.name)
@@ -456,102 +496,123 @@ module.exports = function (homebridge) {
       myAccessoryInformation
         .getCharacteristic(Characteristic.Model)
         .on('get', this.getModel.bind(this))
-      if (this.config.serialNo) {
-        myAccessoryInformation.setCharacteristic(Characteristic.SerialNumber, this.config.serialNo)
-      }
+      if (this.config.serialNo) myAccessoryInformation.setCharacteristic(Characteristic.SerialNumber, this.config.serialNo)
       myAccessoryInformation
         .getCharacteristic(Characteristic.SerialNumber)
         .on('get', this.getSerialNumber.bind(this))
-      if (this.config.firmware) {
-        myAccessoryInformation.setCharacteristic(Characteristic.FirmwareRevision, this.config.firmware)
-      }
+      if (this.config.firmware) myAccessoryInformation.setCharacteristic(Characteristic.FirmwareRevision, this.config.firmware)
       myAccessoryInformation
        .getCharacteristic(Characteristic.FirmwareRevision)
        .on('get', this.getFirmwareRevision.bind(this))
 
-      this.myPowerService = myPowerService
-      myPowerService
-        .getCharacteristic(CommunityTypes.InputVoltageAC)
-        .on('get', this.getInputVoltageAC.bind(this))
-      myPowerService
-        .getCharacteristic(CommunityTypes.BatteryVoltageDC)
-        .on('get', this.getBatteryVoltageDC.bind(this))
-      myPowerService
-        .getCharacteristic(CommunityTypes.UPSLoadPercent)
-        .on('get', this.getUPSLoadPercent.bind(this))
+      if (this.config.subtype === 'power') {
+        const PowerService = function (displayName, subtype) {
+          Service.call(this, displayName, '00000001-0000-1000-8000-135D67EC4377', subtype)
+          this.addCharacteristic(CommunityTypes.InputVoltageAC)
+          this.addCharacteristic(CommunityTypes.BatteryVoltageDC)
+          this.addCharacteristic(CommunityTypes.UPSLoadPercent)
+          this.addCharacteristic(CommunityTypes.Volts)
+          this.addOptionalCharacteristic(CommunityTypes.VoltAmperes)
+          this.addOptionalCharacteristic(CommunityTypes.Watts)
+          this.addOptionalCharacteristic(CommunityTypes.KilowattHours)
+          this.addOptionalCharacteristic(CommunityTypes.OutputVoltageAC)
+          this.addOptionalCharacteristic(Characteristic.CurrentTemperature)
+        }
+        inherits(PowerService, Service)
 
-      myContactService
-        .getCharacteristic(Characteristic.ContactSensorState)
-        .on('get', this.getContactSensorState.bind(this))
-      myContactService
-        .getCharacteristic(Characteristic.StatusActive)
-        .on('get', this.getStatusActive.bind(this))
-      myContactService
-        .getCharacteristic(Characteristic.StatusFault)
-        .on('get', this.getStatusFault.bind(this))
-      if (this.options.history.indexOf('door') !== -1) {    
+        myPowerService = new PowerService()
+        this.myPowerService = myPowerService
+        myPowerService
+          .getCharacteristic(CommunityTypes.InputVoltageAC)
+          .on('get', this.getInputVoltageAC.bind(this))
+        myPowerService
+          .getCharacteristic(CommunityTypes.BatteryVoltageDC)
+          .on('get', this.getBatteryVoltageDC.bind(this))
+        myPowerService
+          .getCharacteristic(CommunityTypes.UPSLoadPercent)
+          .on('get', this.getUPSLoadPercent.bind(this))
+        myPowerService
+          .getCharacteristic(CommunityTypes.Volts)
+          .on('get', this.getVolts.bind(this))
+        myPowerService
+          .getCharacteristic(CommunityTypes.EveResetTotal)
+          .on('get', this.getEveResetTotal.bind(this))
+          .on('set', this.setEveResetTotal.bind(this))
+        services.push(myPowerService)
+
+        this.displayName = this.name + ' Power'
+        this.history = new FakeGatoHistoryService('energy', this, {
+          storage      : 'fs',
+          disableTimer : true,
+          length       : Math.pow(2, 14),
+          path         : homebridge.user.cachedAccessoryPath(),
+          filename     : this.location.host + '-apcupsd-power_persist.json'
+        })
+
+        interval = 1
+      } else {
+        myContactService = new Service.ContactSensor()
         myContactService.addOptionalCharacteristic(CommunityTypes.EveTimesOpened)
+        myContactService.addOptionalCharacteristic(CommunityTypes.EveOpenDuration)
+        myContactService.addOptionalCharacteristic(CommunityTypes.EveClosedDuration)
+        myContactService.addOptionalCharacteristic(CommunityTypes.EveLastActivation)
+        myContactService.addOptionalCharacteristic(CommunityTypes.EveResetTotal)
+        myContactService
+          .getCharacteristic(Characteristic.ContactSensorState)
+          .on('get', this.getContactSensorState.bind(this))
+        myContactService
+          .getCharacteristic(Characteristic.StatusActive)
+          .on('get', this.getStatusActive.bind(this))
+        myContactService
+          .getCharacteristic(Characteristic.StatusFault)
+          .on('get', this.getStatusFault.bind(this))
         myContactService
           .getCharacteristic(CommunityTypes.EveTimesOpened)
           .on('get', this.getEveTimesOpened.bind(this))
-        myContactService.addOptionalCharacteristic(CommunityTypes.EveOpenDuration)
         myContactService
           .getCharacteristic(CommunityTypes.EveOpenDuration)
           .on('get', this.getEveOpenDuration.bind(this))
-        myContactService.addOptionalCharacteristic(CommunityTypes.EveClosedDuration)
         myContactService
-          .getCharacteristic(CommunityTypes
-          .EveClosedDuration).on('get', this.getEveClosedDuration.bind(this))
-        myContactService.addOptionalCharacteristic(CommunityTypes.EveLastActivation)
+          .getCharacteristic(CommunityTypes.EveClosedDuration)
+          .on('get', this.getEveClosedDuration.bind(this))
         myContactService
           .getCharacteristic(CommunityTypes.EveLastActivation)
           .on('get', this.getEveLastActivation.bind(this))
-        myContactService.addOptionalCharacteristic(CommunityTypes.EveResetTotal)
         myContactService
           .getCharacteristic(CommunityTypes.EveResetTotal)
           .on('get', this.getEveResetTotal.bind(this))
           .on('set', this.setEveResetTotal.bind(this))
-      }
+        services.push(myContactService)
 
-      myBatteryService
-        .getCharacteristic(Characteristic.BatteryLevel)
-        .on('get', this.getBatteryLevel.bind(this))
-      myBatteryService
-        .getCharacteristic(Characteristic.ChargingState)
-        .on('get', this.getChargingState.bind(this))
-      myBatteryService
-        .getCharacteristic(Characteristic.StatusLowBattery)
-        .on('get', this.getStatusLowBattery.bind(this))
+        myBatteryService = new Service.BatteryService()
+        myBatteryService
+          .getCharacteristic(Characteristic.BatteryLevel)
+          .on('get', this.getBatteryLevel.bind(this))
+        myBatteryService
+          .getCharacteristic(Characteristic.ChargingState)
+          .on('get', this.getChargingState.bind(this))
+        myBatteryService
+          .getCharacteristic(Characteristic.StatusLowBattery)
+          .on('get', this.getStatusLowBattery.bind(this))
+        services.push(myBatteryService)
 
-      if (this.options.history.indexOf('energy') !== -1) {
-        this.displayName = this.name + ' Energy'
-        this.energyHistory = new FakeGatoHistoryService('energy', this, {
+        this.displayName = this.name + ' Battery'
+        this.history = new FakeGatoHistoryService('door', this, {
           storage      : 'fs',
           disableTimer : true,
           length       : Math.pow(2, 14),
           path         : homebridge.user.cachedAccessoryPath(),
-          filename     : this.location.host + '-apcupsd-energy_persist.json'
+          filename     : this.location.host + '-apcupsd-battery_persist.json'
         })
-        this.energyHistory.subtype = 'energy'
-        services.push(this.energyHistory)
-      }
 
-      if (this.options.history.indexOf('door') !== -1) {
-        this.displayName = this.name + ' Door'
-        this.doorHistory = new FakeGatoHistoryService('door', this, {
-          storage      : 'fs',
-          disableTimer : true,
-          length       : Math.pow(2, 14),
-          path         : homebridge.user.cachedAccessoryPath(),
-          filename     : this.location.host + '-apcupsd-door_persist.json'
-        })
-        this.doorHistory.subtype = 'door'
-        services.push(this.doorHistory)
-        this.loadExtra()
+        interval = this.options.ttl
+        this.loadExtra() // not used for 'power' subtype
       }
+      this.history.subtype = this.config.subtype
+      services.push(this.history)
 
       setTimeout(this.fetchStatus.bind(this), 1 * 1000)
-      setInterval(this.fetchStatus.bind(this), this.options.ttl * 1000)
+      setInterval(this.fetchStatus.bind(this), interval * 1000)
 
       return services
     }

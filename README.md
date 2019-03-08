@@ -147,7 +147,8 @@ Edit `~/.homebridge/config.json`, inside `"accessories": [ ... ]` add:
     , "location"  : "a.b.c.d"
 
     // optional, here are the defaults
-    , "options"   : { "history": "door", "ttl": 600, "verboseP" : false }
+    , "subtype"   : "battery"
+    , "options"   : { "ttl": 600, "verboseP" : false }
 
     , "model"     : "..."
     , "serialNo"  : "..."
@@ -159,11 +160,26 @@ The IP address (`"a.b.c.d"`) is where `apcupsd` is running.
 The default port number is `3551`,
 and can be changed by adding it to the `location` value, e.g., `"192.168.1.109:3552"`.
 
-## History
+## Subtype
 By default,
-the plugin will log history entries for the [Elgato Eve app](https://www.evehome.com/en/eve-app).
-In addition to `"door"`,
-you can also use `"energy"`.
+the plugin will report on the battery in the UPS (i.e., `"subtype" : "battery"`);
+however, you can also have it report on the power instead (i.e., `"subtype" : "power"`).
+
+If you want both reports,
+create two accessories different values for `name` (obviously!),
+but with the same `location` value:
+
+      { "accessory" : "apcupsd"
+      , "name"      : "... Battery"
+      , "location"  : "a.b.c.d"
+      , "subtype"   : "battery"
+      }
+    ,
+      { "accessory" : "apcupsd"
+      , "name"      : "... Power"
+      , "location"  : "a.b.c.d"
+      , "subtype"   : "power"
+      }
 
 ## Name, Model, Serial Number, and Firmware Revision
 Although the plugin successfully retrieves these values from `apcusbd`,
