@@ -181,6 +181,12 @@ but with the same `location` value:
       , "subtype"   : "power"
       }
 
+Please note that the `power` subtype is **experimental**.
+At present,
+there's no mechanism to get Volt-Amperes from the UPS (`0` is always reported).
+More importantly,
+Kilowatt-Hours is based on sampling Watt-Seconds.
+
 ## Name, Model, Serial Number, and Firmware Revision
 Although the plugin successfully retrieves these values from `apcusbd`,
 the plugin can not provide the modified values.

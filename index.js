@@ -163,9 +163,6 @@ module.exports = function (homebridge) {
               if (status.OUTPUTV) {
                 self.myPowerService
                   .getCharacteristic(CommunityTypes.Volts).on('get', self.getOutputVoltageAC.bind(self))
-                self.myPowerService
-                  .getCharacteristic(CommunityTypes.VoltAmperes)
-                  .on('get', this.getVoltAmperes.bind(this))
               }
               if (status.ITEMP) {
                 self.myPowerService
@@ -344,15 +341,9 @@ module.exports = function (homebridge) {
   , getVoltAmperes:
     function (callback) {
       this.fetchStatus(function (err, status) {
-        const power = status && status.NOMPOWER
-        const percentage = status && status.LOADPCT
-        const volts = status && status.OUTPUTV
+// TBD: 
 
-        if ((err) || (power === undefined) || (percentage === undefined) || (volts === undefined) || (volts === 0)) {
-          return callback(err)
-        }
-
-        callback(err, (power * percentage) / (100.0 * volts))
+        callback(err, 0)
       })
     }
 
@@ -512,7 +503,7 @@ module.exports = function (homebridge) {
           this.addCharacteristic(CommunityTypes.BatteryVoltageDC)
           this.addCharacteristic(CommunityTypes.UPSLoadPercent)
           this.addCharacteristic(CommunityTypes.Volts)
-          this.addOptionalCharacteristic(CommunityTypes.VoltAmperes)
+          this.addCharacteristic(CommunityTypes.VoltAmperes)
           this.addOptionalCharacteristic(CommunityTypes.Watts)
           this.addOptionalCharacteristic(CommunityTypes.KilowattHours)
           this.addOptionalCharacteristic(CommunityTypes.OutputVoltageAC)
@@ -534,6 +525,9 @@ module.exports = function (homebridge) {
         myPowerService
           .getCharacteristic(CommunityTypes.Volts)
           .on('get', this.getVolts.bind(this))
+        myPowerService
+          .getCharacteristic(CommunityTypes.VoltAmperes)
+          .on('get', this.getVoltAmperes.bind(this))
         myPowerService
           .getCharacteristic(CommunityTypes.EveResetTotal)
           .on('get', this.getEveResetTotal.bind(this))
