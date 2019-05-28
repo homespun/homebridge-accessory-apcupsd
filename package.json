@@ -1,6 +1,6 @@
 {
   "name": "homebridge-accessory-apcupsd",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "An apcupsd accessory plugin for Homebridge: https://github.com/nfarina/homebridge",
   "author": {
     "name": "Marshall Rose",
