@@ -24,6 +24,7 @@
     "url": "https://github.com/homespun/homebridge-accessory-apcupsd/issues"
   },
   "engines": {
++    "lodash": "4.17.13",
     "node": ">=0.12.0",
     "homebridge": ">=0.4.16"
   },
