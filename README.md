@@ -32,7 +32,7 @@ Then all subsequent installations must be like this:
     sudo npm install -g --unsafe-perm homebridge-accessory-apcupsd
 
 # Install, Configure, and Test apcupsd
-This plugin won't work until you have [apcupsd](http://ww.apcupsd.org/) running in your network.
+This plugin won't work until you have [apcupsd](http://www.apcupsd.org/) running in your network.
 I found this
 [tutorial](http://www.anites.com/2013/09/monitoring-ups.html#How%20to%20monitor%20a%20UPS%20with%20a%20Raspberry%20Pi)
 enlightening.
