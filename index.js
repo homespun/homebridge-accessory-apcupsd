@@ -129,8 +129,8 @@ module.exports = function (homebridge) {
           , MODEL    : s
           , NOMPOWER : r
           , OUTPUTV  : r
-          , STATFLAG : i
           , SERIALNO : s
+          , STATFLAG : i
           , UPSNAME  : s
           }
 
