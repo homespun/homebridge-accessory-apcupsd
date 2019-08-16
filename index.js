@@ -168,6 +168,7 @@ module.exports = function (homebridge) {
               }
               if (status.OUTCURNT) {
                 self.myPowerService
+                  .getCharacteristic(CommunityTypes.VoltAmperes).on('get', self.getOutputVoltAmperes.bind(self))
               }
               if (status.ITEMP) {
                 self.myPowerService
