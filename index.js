@@ -68,6 +68,7 @@ module.exports = function (homebridge) {
 , "LOADPCT": "5.0 Percent"                     // Percentage of UPS load capacity used
 , "BCHARGE": "100.0 Percent"                   // Current battery capacity charge percentage
 , "OUTPUTV": "219.7 Volts"                     // Current UPS output voltage
+, "OUTCURNT": "239.50 Amps"                    // Current UPS output amperage
 , "ITEMP": "31.5 C"                            //
 , "BATTV": "13.5 Volts"                        // Current battery voltage
 , "STATFLAG": "0x05000008"                     // UPS status flag in hex
@@ -129,6 +130,7 @@ module.exports = function (homebridge) {
           , MODEL    : s
           , NOMPOWER : r
           , OUTPUTV  : r
+          , OUTCURNT : r
           , SERIALNO : s
           , STATFLAG : i
           , UPSNAME  : s
@@ -163,6 +165,9 @@ module.exports = function (homebridge) {
               if (status.OUTPUTV) {
                 self.myPowerService
                   .getCharacteristic(CommunityTypes.Volts).on('get', self.getOutputVoltageAC.bind(self))
+              }
+              if (status.OUTCURNT) {
+                self.myPowerService
               }
               if (status.ITEMP) {
                 self.myPowerService
@@ -371,6 +376,13 @@ module.exports = function (homebridge) {
       })
     }
 
+  , getOutputVoltAmperes:
+    function (callback) {
+      this.fetchStatus(function (err, status) {
+        callback(err, status && status.OUTCURNT)
+      })
+    }
+
   , getCurrentTemperature:
     function (callback) {
       this.fetchStatus(function (err, status) {
@@ -507,6 +519,7 @@ module.exports = function (homebridge) {
           this.addOptionalCharacteristic(CommunityTypes.Watts)
           this.addOptionalCharacteristic(CommunityTypes.KilowattHours)
           this.addOptionalCharacteristic(CommunityTypes.OutputVoltageAC)
+          this.addOptionalCharacteristic(CommunityTypes.OutputVoltAmperes)
           this.addOptionalCharacteristic(Characteristic.CurrentTemperature)
         }
         inherits(PowerService, Service)
