@@ -1,6 +1,6 @@
 {
   "name": "homebridge-accessory-apcupsd",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "description": "An apcupsd accessory plugin for Homebridge: https://github.com/nfarina/homebridge",
   "author": {
     "name": "Marshall Rose",
@@ -33,7 +33,6 @@
     "lodash": "4.17.13",
     "node-cache": "4.2.0",
     "hap-nodejs-community-types": "https://github.com/homespun/hap-nodejs-community-types.git",
-    "homespun-discovery": "0.2.1",
     "underscore": "1.8.3"
   }
 }
