@@ -223,6 +223,7 @@ module.exports = function (homebridge) {
             }
           }
 
+          debug('set ' + self.location.host + '_status cache: ' + JSON.stringify(status, null, 2))
           cache.set(self.location.host + '_status', status)
           callback(err, status)
         })
