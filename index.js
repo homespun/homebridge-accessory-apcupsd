@@ -451,6 +451,16 @@ module.exports = function (homebridge) {
       callback(null)
     }
 
+  , getBatteryFail:
+    function (callback) {
+      this.fetchStatus(function (err, status) {
+        let flags = status && status.STATFLAG
+
+        if ((err) || (flags === undefined)) flags = 0x80
+        callback(err, Characteristic.SecuritySystemCurrentState[(flags & 0x80) ? 'ALARM_TRIGGERED' : 'STAY_ARM'])
+      })
+    }
+
   , getBatteryLevel:
     function (callback) {
       this.fetchStatus(function (err, status) {
@@ -488,7 +498,7 @@ module.exports = function (homebridge) {
       const FakeGatoHistoryService = require('fakegato-history')(homebridge)
           , myAccessoryInformation = new Service.AccessoryInformation()
       const services = [ myAccessoryInformation ]
-      let interval, myPowerService, myContactService, myBatteryService
+      let interval, myPowerService, myContactService, myBatteryService, myAlarmService
 
       myAccessoryInformation
         .setCharacteristic(Characteristic.Name, this.name)
@@ -591,6 +601,14 @@ module.exports = function (homebridge) {
           .on('get', this.getEveResetTotal.bind(this))
           .on('set', this.setEveResetTotal.bind(this))
         services.push(myContactService)
+
+        myAlarmService = new Service.SecuritySystem()
+        myAlarmService
+            .setCharacteristic(Characteristic.Name, this.name + ' Fail')
+        myAlarmService
+          .getCharacteristic(Characteristic.SecuritySystemCurrentState)
+          .on('get', this.getBatteryFail.bind(this))
+        services.push(myAlarmService)
 
         myBatteryService = new Service.BatteryService()
         myBatteryService
