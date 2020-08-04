@@ -31,7 +31,7 @@
     "apcaccess": "1.1.2",
     "fakegato-history": "^0.5.5",
     "hap-nodejs-community-types": "https://github.com/homespun/hap-nodejs-community-types.git",
-    "lodash": "4.17.13",
+    "lodash": "4.17.19",
     "node-cache": "4.2.0",
     "underscore": "1.8.3"
   }
