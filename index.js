@@ -533,6 +533,7 @@ module.exports = function (homebridge) {
           this.addOptionalCharacteristic(CommunityTypes.OutputVoltageAC)
           this.addOptionalCharacteristic(CommunityTypes.OutputVoltAmperes)
           this.addOptionalCharacteristic(Characteristic.CurrentTemperature)
+          this.addCharacteristic(CommunityTypes.EveResetTotal)
         }
         inherits(PowerService, Service)
 
