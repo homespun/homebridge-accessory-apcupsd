@@ -36,6 +36,6 @@
     "node-cache": "4.2.0",
     "node-fetch": "2.6.1",
     "node-forge": ">=0.10.0",
-    "underscore": "1.8.3"
+    "underscore": "1.12.1"
   }
 }
